@@ -12,12 +12,16 @@ ConVar g_hSpecialString;
 ConVar g_hMpForceCamera;
 
 char g_sSpecialString[stylestrings_t::sSpecialString];
-bool g_bThirdPersonEnabled[MAXPLAYERS + 1];
+
+bool g_bThirdPersonIsEnabled[MAXPLAYERS + 1];
+bool g_bNightVisionIsEnabled[MAXPLAYERS + 1];
+
 int g_iFov[MAXPLAYERS + 1];
 int g_iMinFov = 80;
 int g_iMaxFov = 125;
 
 Cookie g_cFovCookie;
+Cookie g_cNvgCookie;
 
 // Plugin Info -----------------------------------------------------------
 
@@ -25,7 +29,7 @@ public Plugin myinfo = {
 	name = "Shavit - Thirdperson Style",
 	author = "devins, shinoum",
 	description = "Simple Third-Person Camera style for CS:S Bhop Timer.",
-	version = "1.0.2",
+	version = "1.1.0",
 	url = "https://github.com/NSchrot/shavit-style-thirdperson"
 };
 
@@ -40,10 +44,22 @@ public void OnPluginStart()
 
 	HookEvent("player_spawn", OnPlayerSpawn);
 
+	// Commands -----
+	
+	RegConsoleCmd("sm_tpmenu", Command_MainMenu, "Open Thirdperson Main Menu");
+
+	RegConsoleCmd("sm_tpnvg", Command_ToggleNightVision, "Toggle Night Vision");
+	RegConsoleCmd("sm_tpnv", Command_ToggleNightVision, "Toggle Night Vision");
+	RegConsoleCmd("sm_nvg", Command_ToggleNightVision, "Toggle Night Vision");
+	RegConsoleCmd("sm_nv", Command_ToggleNightVision, "Toggle Night Vision");
+
 	RegConsoleCmd("sm_tpfov", Command_ApplyFOV, "Apply User Inserted FOV for thirdperson style");
 	RegConsoleCmd("sm_fov", Command_ApplyFOV, "Apply User Inserted FOV for thirdperson style");
 
+	// Cookies -----
+
 	g_cFovCookie = new Cookie("tp_fov", "thirdperson fov state", CookieAccess_Protected);
+	g_cNvgCookie = new Cookie("tp_nvg", "thirdperson nvg state", CookieAccess_Protected);
 
 	for (int client = 1; client <= MaxClients; client++)
 	{
@@ -84,20 +100,32 @@ public void OnClientCookiesCached(int client)
 	{
 		g_iFov[client] = StringToInt(buffer);
 	}
+
+	// Load Night Vision Goggles cookie
+	g_cNvgCookie.Get(client, buffer, sizeof(buffer));
+	if (buffer[0] == '\0')
+	{
+	    g_bNightVisionIsEnabled[client] = false;
+	    g_cNvgCookie.Set(client, "0");
+	}
+	else
+	{
+	    g_bNightVisionIsEnabled[client] = (StringToInt(buffer) == 1);
+	}
 }
 
 public void OnClientDisconnect(int client)
 {
-	if (g_bThirdPersonEnabled[client])
+	if (g_bThirdPersonIsEnabled[client])
 		RevertFirstPerson(client);
 
-	g_bThirdPersonEnabled[client] = false;
+	g_bThirdPersonIsEnabled[client] = false;
 }
 
 // fix for fov being reset after dropping or picking up a weapon
 public void OnClientPostThinkPost(int client)
 {
-	if (!IsValidClient(client) || !g_bThirdPersonEnabled[client])
+	if (!IsValidClient(client) || !g_bThirdPersonIsEnabled[client])
 		return;
 		
 	if (GetEntProp(client, Prop_Send, "m_iFOV") != g_iFov[client])
@@ -110,7 +138,7 @@ public void OnPlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 	if (!IsValidClient(client) || !IsInTPStyle(client))
 		return;
 
-	g_bThirdPersonEnabled[client] = true;
+	g_bThirdPersonIsEnabled[client] = true;
 	CreateTimer(0.1, Timer_ReApplyThirdPerson, GetClientSerial(client));
 }
 
@@ -125,15 +153,15 @@ public void Shavit_OnStyleChanged(int client, int oldstyle, int newstyle, int tr
 	Shavit_GetStyleStrings(newstyle, sSpecialString, sStyleSpecial, sizeof(sStyleSpecial));
     bool bIsInTPStyle = (StrContains(sStyleSpecial, g_sSpecialString) != -1);
 
-    if (bIsInTPStyle && !g_bThirdPersonEnabled[client])
+    if (bIsInTPStyle && !g_bThirdPersonIsEnabled[client])
     {
-        g_bThirdPersonEnabled[client] = true;
+        g_bThirdPersonIsEnabled[client] = true;
         ApplyThirdPerson(client);
     }
-    else if (!bIsInTPStyle && g_bThirdPersonEnabled[client])
+    else if (!bIsInTPStyle && g_bThirdPersonIsEnabled[client])
     {
         RevertFirstPerson(client);
-        g_bThirdPersonEnabled[client] = false;
+        g_bThirdPersonIsEnabled[client] = false;
     }
 }
 
@@ -143,6 +171,19 @@ public void ConVar_OnSpecialStringChanged(ConVar convar, const char[] oldValue, 
 }
 
 // Commands ---------------------------------------------------------------------------------
+
+public Action Command_ToggleNightVision(int client, int args)
+{
+    if (!IsValidClient(client) || !IsInTPStyle(client))
+        return Plugin_Handled;
+
+	g_bNightVisionIsEnabled[client] = !g_bNightVisionIsEnabled[client];
+	SetEntProp(client, Prop_Send, "m_bNightVisionOn", g_bNightVisionIsEnabled[client] ? 1 : 0);
+
+	SaveSettingToCookie(g_cNvgCookie, client, g_bNightVisionIsEnabled[client]);
+
+    return Plugin_Handled;
+}
 
 public Action Command_ApplyFOV(int client, int args)
 {
@@ -181,15 +222,27 @@ public Action Command_ApplyFOV(int client, int args)
 	return Plugin_Handled;
 }
 
+public Action Command_MainMenu(int client, int args)
+{
+	if (!IsValidClient(client) || !IsInTPStyle(client))
+		return Plugin_Handled;
+
+	ShowMainMenu(client);
+
+	return Plugin_Handled;
+}
+
 // Timers ----------------------------------------------------------------------------------
 
 // This timer is being used to re-apply the third person camera once the player re-joins the server
 public Action Timer_ReApplyThirdPerson(Handle timer, int serial)
 {
 	int client = GetClientFromSerial(serial);
-
-	if (IsValidClient(client) && g_bThirdPersonEnabled[client])
+	if (IsValidClient(client) && g_bThirdPersonIsEnabled[client])
+	{
 		CreateTimer(0.1, Timer_ActivateThirdPerson, GetClientSerial(client));
+		SetEntProp(client, Prop_Send, "m_bNightVisionOn", g_bNightVisionIsEnabled[client] ? 1 : 0);
+	}
 
 	return Plugin_Stop;
 }
@@ -197,12 +250,12 @@ public Action Timer_ReApplyThirdPerson(Handle timer, int serial)
 public Action Timer_ActivateThirdPerson(Handle timer, int serial)
 {
 	int client = GetClientFromSerial(serial);
-	if (!IsValidClient(client) || !g_bThirdPersonEnabled[client])
-		return Plugin_Stop;
-	
-	SetObserverMode(client, 1);
-	SetEntProp(client, Prop_Send, "m_iFOV", g_iFov[client]);
-	
+	if (IsValidClient(client) && g_bThirdPersonIsEnabled[client])
+	{
+		SetObserverMode(client, 1);
+		SetEntProp(client, Prop_Send, "m_iFOV", g_iFov[client]);
+	}
+
 	return Plugin_Stop;
 }
 
@@ -219,7 +272,7 @@ public void ApplyThirdPerson(int client)
 	SDKHook(client, SDKHook_PostThinkPost, OnClientPostThinkPost);
 	CreateTimer(0.1, Timer_ActivateThirdPerson, GetClientSerial(client));
 
-	Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffType \x07A082FF/fov \x07ffffffto adjust your Field of View");
+	Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffType \x07A082FF/tpmenu \x07ffffffto adjust settings");
 }
 
 public void RevertFirstPerson(int client)
@@ -270,6 +323,49 @@ public void SaveSettingToCookie(Cookie cookie, int client, int value)
 
 // Menus ------------------------------------------------------------------------
 
+void ShowMainMenu(int client)
+{
+	Menu menu = new Menu(MainMenuHandler, MENU_ACTIONS_DEFAULT);
+	menu.SetTitle("Third Person\n \n");
+
+	char nvgStatus[32];
+	Format(nvgStatus, sizeof(nvgStatus), "Night Vision: %s", g_bNightVisionIsEnabled[client] ? "On" : "Off");
+	menu.AddItem("nvg", nvgStatus);
+
+	menu.AddItem("fov", "FOV");
+
+	menu.ExitButton = true;
+	menu.Display(client, MENU_TIME_FOREVER);
+}
+
+public int MainMenuHandler(Menu menu, MenuAction action, int client, int option)
+{
+	switch(action)
+	{
+		case MenuAction_Select:
+		{
+			char info[32];
+			menu.GetItem(option, info, sizeof(info));
+
+			if (StrEqual(info, "fov"))
+			{
+				ShowFovMenu(client);
+			}
+			else if (StrEqual(info, "nvg"))
+			{
+				Command_ToggleNightVision(client, 0);
+				ShowMainMenu(client);
+			}
+		}
+		case MenuAction_End:
+		{
+			delete menu;
+		}
+	}
+	
+	return 0;
+}
+
 void ShowFovMenu(int client)
 {
 	Menu menu = new Menu(FovMenuHandler, MENU_ACTIONS_DEFAULT);
@@ -282,6 +378,8 @@ void ShowFovMenu(int client)
 	menu.AddItem("decrease", "--\n \n");
 
 	menu.AddItem("default", "Set to Default\n \n");
+
+	menu.AddItem("mainMenu", "Main Menu");
 	
 	menu.ExitButton = true;
 	menu.Display(client, MENU_TIME_FOREVER);
@@ -296,7 +394,7 @@ public int FovMenuHandler(Menu menu, MenuAction action, int client, int option)
 			char info[32];
 			menu.GetItem(option, info, sizeof(info));
 			
-			if (g_bThirdPersonEnabled[client])
+			if (g_bThirdPersonIsEnabled[client])
 			{
 				if (StrEqual(info, "increase"))
 				{
@@ -323,7 +421,10 @@ public int FovMenuHandler(Menu menu, MenuAction action, int client, int option)
 					SaveSettingToCookie(g_cFovCookie, client, g_iFov[client]);
 				}
 
-				ShowFovMenu(client);
+				if (StrEqual(info, "mainMenu"))
+					ShowMainMenu(client);
+				else
+					ShowFovMenu(client);	
 			}
 		}
 		case MenuAction_End:

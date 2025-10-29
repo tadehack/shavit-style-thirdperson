@@ -1,7 +1,7 @@
 <div align="center">
   <h1><code>Shavit Third Person</code></h1>
   <p>
-    <strong>Simple third-person chase camera for shavit's CS:S bhop timer with customizable FOV</strong>
+    <strong>Simple third-person chase camera for shavit's CS:S bhop timer with customizable FOV and more</strong>
   </p>
 </div>
 
@@ -10,10 +10,10 @@
 ## Features
 
 - **Third-person chase camera** with fixed behind-player view
-- **Customizable FOV**: Adjust field of view from 80-120
-- **Persistent settings**: FOV saved automatically per player
+- **Customizable FOV**: Adjustable field of view
+- **Persistent settings**: Cookies that saves player settings on the server
 - **Per-client mp_forcecamera**: Only affects players using the style
-- **Shavit integration**: Works perfectly with shavit-timer system
+- **Shavit integration**: Works seamlessly with shavit-timer styles
 
 ## Installation
 
@@ -30,30 +30,31 @@
 
 ## Commands & Controls
 
-| Command         | Usage         | Description                              |
-|-----------------|---------------|------------------------------------------|
-| `/tpfov <val>`  | `/tpfov 105`  | Set camera FOV (80-120)                  |
-| `/fov <val>`    | `/fov 90`     | Alias for `/tpfov`                       |
-| `/tpfov`        | -             | Show current FOV and usage               |
+| Command         | Description                              |
+|-----------------|------------------------------------------|
+| `/tpfov <val>`  | Set camera Field of View                 |
+| `/tpfov`        | Shows current FOV and opens FOV menu     |
+| `/tpnvg`        | Toggle Night Vision Goggles              |
+| `/tpmenu`       | Opens the Third Person Main Menu         |
 
 ## Usage
 
-1. Select **Third Person** style in the `!style` menu
+1. Select **Third Person** style in the `/style` menu
 2. Camera switches to third-person chase view automatically
-3. Use `/fov <value>` to adjust your preferred field of view
-4. Your FOV setting is saved automatically
+3. Type `/tpmenu` to adjust your settings
+4. All settings are saved automatically
 
 ## Configuration Example
 
 Add to your `shavit-styles.cfg`:
 
 ```json
-"ThirdPerson"
+"<stylenumber>"
 {
     "name"              "Third Person"
-    "shortname"         "TP"
+    "shortname"         "3rd"
     "htmlcolor"         "00FF88"
-    "specialstring"     "thirdperson"
+    "specialstring"     "thirdperson; bash_bypass"
     // ... other style settings
 }
 ```
@@ -77,9 +78,11 @@ Add to your `shavit-styles.cfg`:
 - **Camera not activating**:  
   Ensure your style has `"specialstring" "thirdperson"` in the Shavit config and matches the ConVar value.
 
-- **FOV not saving**:  
+- **Settings not saving for players**:  
   Check if ClientPrefs/cookies are working on your server (`sm_cookie_menu`).
 
-- **Can't switch weapons**: This is due to the third-person implementation that uses the Spectator Camera to simulate third-person, unless the camera implementation is changed, this can't be fixed.
+- **Can't switch weapons**:  
+This is due to the third-person implementation that uses the Spectator Camera to simulate third-person, unless the camera implementation is changed, this can't be fixed.  
+The current workaround is to get a weapon by typing it's related command: `/glock`, `/usp`, etc.
 
 ---
