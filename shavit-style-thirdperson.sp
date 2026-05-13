@@ -15,10 +15,12 @@ char g_sSpecialString[stylestrings_t::sSpecialString];
 
 bool g_bThirdPersonIsEnabled[MAXPLAYERS + 1];
 bool g_bNightVisionIsEnabled[MAXPLAYERS + 1];
+bool g_bFixedCamera[MAXPLAYERS + 1];
 
 int g_iFov[MAXPLAYERS + 1];
 int g_iMinFov = 80;
 int g_iMaxFov = 125;
+int g_iLastButtons[MAXPLAYERS + 1];
 
 Cookie g_cFovCookie;
 Cookie g_cNvgCookie;
@@ -29,7 +31,7 @@ public Plugin myinfo = {
 	name = "Shavit - Thirdperson Style",
 	author = "devins, shinoum",
 	description = "Simple Third-Person Camera style for CS:S Bhop Timer.",
-	version = "1.1.0",
+	version = "1.2.0",
 	url = "https://github.com/NSchrot/shavit-style-thirdperson"
 };
 
@@ -46,15 +48,34 @@ public void OnPluginStart()
 
 	// Commands -----
 	
+	// Menu
+	RegConsoleCmd("sm_thirdpersonsettings", Command_MainMenu, "Open Thirdperson Main Menu");
+	RegConsoleCmd("sm_thirdpersonoptions", Command_MainMenu, "Open Thirdperson Main Menu");
+	RegConsoleCmd("sm_thirdpersonmenu", Command_MainMenu, "Open Thirdperson Main Menu");
+	RegConsoleCmd("sm_tpsettings", Command_MainMenu, "Open Thirdperson Main Menu");
+	RegConsoleCmd("sm_tpoptions", Command_MainMenu, "Open Thirdperson Main Menu");
 	RegConsoleCmd("sm_tpmenu", Command_MainMenu, "Open Thirdperson Main Menu");
 
+	// Nightvision
+	RegConsoleCmd("sm_tpnightvision", Command_ToggleNightVision, "Toggle Night Vision");
+	RegConsoleCmd("sm_nightvision", Command_ToggleNightVision, "Toggle Night Vision");
 	RegConsoleCmd("sm_tpnvg", Command_ToggleNightVision, "Toggle Night Vision");
 	RegConsoleCmd("sm_tpnv", Command_ToggleNightVision, "Toggle Night Vision");
 	RegConsoleCmd("sm_nvg", Command_ToggleNightVision, "Toggle Night Vision");
 	RegConsoleCmd("sm_nv", Command_ToggleNightVision, "Toggle Night Vision");
 
+	// Fov
 	RegConsoleCmd("sm_tpfov", Command_ApplyFOV, "Apply User Inserted FOV for thirdperson style");
 	RegConsoleCmd("sm_fov", Command_ApplyFOV, "Apply User Inserted FOV for thirdperson style");
+
+	// Toggle Fixed Camera
+	RegConsoleCmd("sm_tpfixedcamera", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_fixedtpcamera", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_locktpcamera", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_tplockcamera", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_tpcameramode", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_cameramode", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
+	RegConsoleCmd("sm_lockcamera", Command_ToggleFixedCamera, "Apply Fixed Camera mode for player skin viewing");
 
 	// Cookies -----
 
@@ -138,8 +159,30 @@ public void OnPlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 	if (!IsValidClient(client) || !IsInTPStyle(client))
 		return;
 
+	g_bFixedCamera[client] = false;
+	if (g_hMpForceCamera != null)
+		SendConVarValue(client, g_hMpForceCamera, "0");
+
 	g_bThirdPersonIsEnabled[client] = true;
 	CreateTimer(0.1, Timer_ReApplyThirdPerson, GetClientSerial(client));
+}
+
+public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon)
+{
+    if (!IsValidClient(client) || !g_bThirdPersonIsEnabled[client])
+    {
+        g_iLastButtons[client] = buttons;
+        return Plugin_Continue;
+    }
+
+    if (buttons & IN_RELOAD)
+    {
+        if (!(g_iLastButtons[client] & IN_RELOAD))
+            ToggleFixedCamera(client);
+    }
+
+    g_iLastButtons[client] = buttons;
+    return Plugin_Continue;
 }
 
 // Style Changed ---------------------------------------------------------------------------
@@ -156,7 +199,12 @@ public void Shavit_OnStyleChanged(int client, int oldstyle, int newstyle, int tr
     if (bIsInTPStyle && !g_bThirdPersonIsEnabled[client])
     {
         g_bThirdPersonIsEnabled[client] = true;
+		g_bFixedCamera[client] = false;
+
         ApplyThirdPerson(client);
+
+		Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffType \x07A082FF/tpmenu \x07ffffffto adjust settings");
+    	Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffPress \x07A082FFReload \x07ffffffto lock/unlock camera angle");
     }
     else if (!bIsInTPStyle && g_bThirdPersonIsEnabled[client])
     {
@@ -222,6 +270,16 @@ public Action Command_ApplyFOV(int client, int args)
 	return Plugin_Handled;
 }
 
+public Action Command_ToggleFixedCamera(int client, int args)
+{
+	if (!IsValidClient(client) || !IsInTPStyle(client))
+		return Plugin_Handled;
+
+	ToggleFixedCamera(client);
+
+	return Plugin_Handled;
+}
+
 public Action Command_MainMenu(int client, int args)
 {
 	if (!IsValidClient(client) || !IsInTPStyle(client))
@@ -249,30 +307,56 @@ public Action Timer_ReApplyThirdPerson(Handle timer, int serial)
 
 public Action Timer_ActivateThirdPerson(Handle timer, int serial)
 {
-	int client = GetClientFromSerial(serial);
-	if (IsValidClient(client) && g_bThirdPersonIsEnabled[client])
-	{
-		SetObserverMode(client, 1);
-		SetEntProp(client, Prop_Send, "m_iFOV", g_iFov[client]);
-	}
+    int client = GetClientFromSerial(serial);
+    if (IsValidClient(client) && g_bThirdPersonIsEnabled[client])
+    {
+        SetObserverMode(client, 1);
+        SetEntProp(client, Prop_Send, "m_iFOV", g_iFov[client]);
+    }
 
-	return Plugin_Stop;
+    return Plugin_Stop;
 }
 
 // Functions -------------------------------------------------------------------------------
 
 public void ApplyThirdPerson(int client)
 {
-	if (!IsValidClient(client) || IsFakeClient(client))
-		return;
+    if (!IsValidClient(client) || IsFakeClient(client))
+        return;
 
-	if (g_hMpForceCamera != null)
-		SendConVarValue(client, g_hMpForceCamera, "0");
+    if (g_hMpForceCamera != null)
+        SendConVarValue(client, g_hMpForceCamera, "0");
 
-	SDKHook(client, SDKHook_PostThinkPost, OnClientPostThinkPost);
-	CreateTimer(0.1, Timer_ActivateThirdPerson, GetClientSerial(client));
+    SDKHook(client, SDKHook_PostThinkPost, OnClientPostThinkPost);
+    CreateTimer(0.1, Timer_ActivateThirdPerson, GetClientSerial(client));
+}
 
-	Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffType \x07A082FF/tpmenu \x07ffffffto adjust settings");
+public void ToggleFixedCamera(int client)
+{
+    if (!IsValidClient(client))
+        return;
+        
+    g_bFixedCamera[client] = !g_bFixedCamera[client];
+
+    if (g_bFixedCamera[client])
+    {
+        // Lock to current angle immediately
+        float angles[3];
+        GetClientEyeAngles(client, angles);
+        TeleportEntity(client, NULL_VECTOR, angles, NULL_VECTOR);
+
+        if (g_hMpForceCamera != null)
+            SendConVarValue(client, g_hMpForceCamera, "1");
+
+        Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffCamera mode set to \x07A082FFLocked");
+    }
+    else
+    {
+        if (g_hMpForceCamera != null)
+            SendConVarValue(client, g_hMpForceCamera, "0");
+
+        Shavit_PrintToChat(client, "\x078efeffThird-Person: \x07ffffffCamera mode set to \x078efeffUnlocked");
+    }
 }
 
 public void RevertFirstPerson(int client)
@@ -334,6 +418,10 @@ void ShowMainMenu(int client)
 
 	menu.AddItem("fov", "FOV");
 
+	char fixedCameraStatus[32];
+	Format(fixedCameraStatus, sizeof(fixedCameraStatus), "Camera Mode: %s", g_bFixedCamera[client] ? "Locked" : "Unlocked");
+	menu.AddItem("fixedcamera", fixedCameraStatus);
+
 	menu.ExitButton = true;
 	menu.Display(client, MENU_TIME_FOREVER);
 }
@@ -354,6 +442,11 @@ public int MainMenuHandler(Menu menu, MenuAction action, int client, int option)
 			else if (StrEqual(info, "nvg"))
 			{
 				Command_ToggleNightVision(client, 0);
+				ShowMainMenu(client);
+			}
+			else if (StrEqual(info, "fixedcamera"))
+			{
+				ToggleFixedCamera(client);
 				ShowMainMenu(client);
 			}
 		}
